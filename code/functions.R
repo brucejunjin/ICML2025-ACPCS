@@ -29,7 +29,7 @@ colSd <- function (x, na.rm=FALSE) apply(X=x, MARGIN=2, FUN=sd, na.rm=na.rm)
 PPIwcf <- function(source, target, sourcebb = NULL, targetbb = NULL, family = 'gaussian',
                 SL.library = c("SL.glm", "SL.gam", "SL.glmnet", "SL.ranger", "SL.ksvm", 
                                "SL.mean", "SL.randomForest", "SL.xgboost"),
-                bootstrap = FALSE){
+                bootstrap = FALSE, onlymean  = FALSE){
   set.seed(2025)
   xtg <- target$x
   xsc <- source$x
@@ -83,94 +83,20 @@ PPIwcf <- function(source, target, sourcebb = NULL, targetbb = NULL, family = 'g
       scpart <- sum(what * (ysc - yhatsc) / pihat)
       tgpart <- sum(yhattg / (1 - pihat))
       meanhat <- 1 / (nrow(xtg) / (1 - pihat)) * (scpart + tgpart)
-      ## solve param equation
-      if (family == 'gaussian'){
-        scpart <- t(what * (ysc - yhatsc) / pihat)  %*% cbind(rep(1, nrow(xsc)), xsc) 
-        tgpart <- t(yhattg / (1 - pihat)) %*% cbind(rep(1, nrow(xtg)), xtg)
-        leftpart <- t(cbind(rep(1, nrow(xtg)), xtg)) %*% cbind(rep(1, nrow(xtg)), xtg) / (1 - pihat)
-        betahat <- as.vector(solve(leftpart, diag(nrow(leftpart))) %*% t(scpart + tgpart))
-        success <- 1
-      } else if (family == 'binomial') {
-        avec <- t(what * (ysc - yhatsc) / pihat)  %*% cbind(rep(1, nrow(xsc)), xsc) 
-        penalized_objective <- function(betavec, lambda) {
-          unpenalized_loss(avec, betavec, xtg, xsc, yhattg, pihat) + lambda * sum(betavec^2)
-        }
-        fit_for_lambda <- function(lambda, start_par = NULL) {
-          if (is.null(start_par)) {
-            start_par <- rep(0, ncol(xtg) + 1)
-          }
-          solution <- tryCatch(
-            expr = {
-              optim(
-                par    = start_par,
-                fn     = function(b) penalized_objective(b, lambda),
-                method = "BFGS"
-              )
-            },
-            warning = function(w) {
-              message("Warning in optim: ", w$message)
-              list('par' = start_par, 'convergence' = 1)
-            },
-            error = function(e) {
-              message("Error in optim: ", e$message)
-              list('par' = start_par, 'convergence' = 1)
-            }
-          )
-          return(solution)
-        }
-        lambda_grid <- c(0, 1e-4, 1e-3, 1e-2, 1e-1, 1)
-        results_list <- vector("list", length(lambda_grid))
-        names(results_list) <- paste0("lambda=", lambda_grid)
-        for (i in seq_along(lambda_grid)) {
-          this_lambda <- lambda_grid[i]
-          fit <- fit_for_lambda(this_lambda)
-          val_unpenalized <- unpenalized_loss(avec, fit$par, xtg, xsc, yhattg, pihat)
-          results_list[[i]] <- list(
-            lambda           = this_lambda,
-            betavec_solution = fit$par,
-            penalized_value  = fit$value,  
-            unpenalized_loss = val_unpenalized,
-            convergence      = fit$convergence
-          )
-        }
-        converged_indices <- which(sapply(results_list, function(x) x$convergence) == 0)
-        if (length(converged_indices) == 0) {
-          message("No model converged. Handle this case as you see fit...")
-          best_lambda <- NA
-          betahat     <- NA
-          success     <- 0
-        } else {
-          converged_models <- results_list[converged_indices]
-          lambdas_converged <- sapply(converged_models, function(x) x$lambda)
-          best_idx_local    <- which.min(lambdas_converged)
-          best_model  <- converged_models[[best_idx_local]]
-          best_lambda <- best_model$lambda
-          betahat     <- as.vector(best_model$betavec_solution)
-          success     <- 1
-        }
-      }
-    } else {
-      meanhat <- c()
-      betahat <- matrix(NA, nrow = 500, ncol = ncol(xtg) + 1)
-      for (bt in 1:500){
-        # generate ksi
-        ksivec <- rexp(n = nrow(xtg) + nrow(xsc), 1)
-        ksitg <- ksivec[1:nrow(xtg)]
-        ksisc <- ksivec[(nrow(xtg) + 1): (nrow(xtg) + nrow(xsc))]
-        ## solve mean equation
-        scpart <- sum(what * (ysc - yhatsc) / pihat * ksisc)
-        tgpart <- sum(yhattg / (1 - pihat) * ksitg)
-        meanhat[bt] <- 1 / (sum(ksitg)/ (1 - pihat)) * (scpart + tgpart)
+      if (onlymean == T){
+        betahat  <- NULL
+      } else {
         ## solve param equation
         if (family == 'gaussian'){
-          scpart <- t(what * (ysc - yhatsc) / pihat * ksisc)  %*% cbind(rep(1, nrow(xsc)), xsc) 
-          tgpart <- t(yhattg / (1 - pihat) * ksitg) %*% cbind(rep(1, nrow(xtg)), xtg)
-          leftpart <- t(cbind(rep(1, nrow(xtg)), xtg)) %*% (cbind(rep(1, nrow(xtg)), xtg) * ksitg) / (1 - pihat)
-          betahat[bt,] <- as.vector(solve(leftpart, diag(nrow(leftpart))) %*% t(scpart + tgpart))
+          scpart <- t(what * (ysc - yhatsc) / pihat)  %*% cbind(rep(1, nrow(xsc)), xsc) 
+          tgpart <- t(yhattg / (1 - pihat)) %*% cbind(rep(1, nrow(xtg)), xtg)
+          leftpart <- t(cbind(rep(1, nrow(xtg)), xtg)) %*% cbind(rep(1, nrow(xtg)), xtg) / (1 - pihat)
+          betahat <- as.vector(solve(leftpart, diag(nrow(leftpart))) %*% t(scpart + tgpart))
+          success <- 1
         } else if (family == 'binomial') {
-          avec <- t(what * (ysc - yhatsc) / pihat * ksisc)  %*% cbind(rep(1, nrow(xsc)), xsc) 
+          avec <- t(what * (ysc - yhatsc) / pihat)  %*% cbind(rep(1, nrow(xsc)), xsc) 
           penalized_objective <- function(betavec, lambda) {
-            unpenalized_loss_boot(avec, betavec, xtg, xsc, yhattg, pihat, ksitg) + lambda * sum(betavec^2)
+            unpenalized_loss(avec, betavec, xtg, xsc, yhattg, pihat) + lambda * sum(betavec^2)
           }
           fit_for_lambda <- function(lambda, start_par = NULL) {
             if (is.null(start_par)) {
@@ -201,7 +127,7 @@ PPIwcf <- function(source, target, sourcebb = NULL, targetbb = NULL, family = 'g
           for (i in seq_along(lambda_grid)) {
             this_lambda <- lambda_grid[i]
             fit <- fit_for_lambda(this_lambda)
-            val_unpenalized <- unpenalized_loss_boot(avec, fit$par, xtg, xsc, yhattg, pihat, ksitg)
+            val_unpenalized <- unpenalized_loss(avec, fit$par, xtg, xsc, yhattg, pihat)
             results_list[[i]] <- list(
               lambda           = this_lambda,
               betavec_solution = fit$par,
@@ -214,7 +140,7 @@ PPIwcf <- function(source, target, sourcebb = NULL, targetbb = NULL, family = 'g
           if (length(converged_indices) == 0) {
             message("No model converged. Handle this case as you see fit...")
             best_lambda <- NA
-            betaest     <- NA
+            betahat     <- NA
             success     <- 0
           } else {
             converged_models <- results_list[converged_indices]
@@ -222,7 +148,89 @@ PPIwcf <- function(source, target, sourcebb = NULL, targetbb = NULL, family = 'g
             best_idx_local    <- which.min(lambdas_converged)
             best_model  <- converged_models[[best_idx_local]]
             best_lambda <- best_model$lambda
-            betahat[bt,]     <- as.vector(best_model$betavec_solution)
+            betahat     <- as.vector(best_model$betavec_solution)
+            success     <- 1
+          }
+        }
+      }
+    } else {
+      meanhat <- c()
+      betahat <- matrix(NA, nrow = 500, ncol = ncol(xtg) + 1)
+      for (bt in 1:500){
+        # generate ksi
+        ksivec <- rexp(n = nrow(xtg) + nrow(xsc), 1)
+        ksitg <- ksivec[1:nrow(xtg)]
+        ksisc <- ksivec[(nrow(xtg) + 1): (nrow(xtg) + nrow(xsc))]
+        ## solve mean equation
+        scpart <- sum(what * (ysc - yhatsc) / pihat * ksisc)
+        tgpart <- sum(yhattg / (1 - pihat) * ksitg)
+        meanhat[bt] <- 1 / (sum(ksitg)/ (1 - pihat)) * (scpart + tgpart)
+        if (onlymean == T){
+          next
+        } else {
+          ## solve param equation
+          if (family == 'gaussian'){
+            scpart <- t(what * (ysc - yhatsc) / pihat * ksisc)  %*% cbind(rep(1, nrow(xsc)), xsc) 
+            tgpart <- t(yhattg / (1 - pihat) * ksitg) %*% cbind(rep(1, nrow(xtg)), xtg)
+            leftpart <- t(cbind(rep(1, nrow(xtg)), xtg)) %*% (cbind(rep(1, nrow(xtg)), xtg) * ksitg) / (1 - pihat)
+            betahat[bt,] <- as.vector(solve(leftpart, diag(nrow(leftpart))) %*% t(scpart + tgpart))
+          } else if (family == 'binomial') {
+            avec <- t(what * (ysc - yhatsc) / pihat * ksisc)  %*% cbind(rep(1, nrow(xsc)), xsc) 
+            penalized_objective <- function(betavec, lambda) {
+              unpenalized_loss_boot(avec, betavec, xtg, xsc, yhattg, pihat, ksitg) + lambda * sum(betavec^2)
+            }
+            fit_for_lambda <- function(lambda, start_par = NULL) {
+              if (is.null(start_par)) {
+                start_par <- rep(0, ncol(xtg) + 1)
+              }
+              solution <- tryCatch(
+                expr = {
+                  optim(
+                    par    = start_par,
+                    fn     = function(b) penalized_objective(b, lambda),
+                    method = "BFGS"
+                  )
+                },
+                warning = function(w) {
+                  message("Warning in optim: ", w$message)
+                  list('par' = start_par, 'convergence' = 1)
+                },
+                error = function(e) {
+                  message("Error in optim: ", e$message)
+                  list('par' = start_par, 'convergence' = 1)
+                }
+              )
+              return(solution)
+            }
+            lambda_grid <- c(0, 1e-4, 1e-3, 1e-2, 1e-1, 1)
+            results_list <- vector("list", length(lambda_grid))
+            names(results_list) <- paste0("lambda=", lambda_grid)
+            for (i in seq_along(lambda_grid)) {
+              this_lambda <- lambda_grid[i]
+              fit <- fit_for_lambda(this_lambda)
+              val_unpenalized <- unpenalized_loss_boot(avec, fit$par, xtg, xsc, yhattg, pihat, ksitg)
+              results_list[[i]] <- list(
+                lambda           = this_lambda,
+                betavec_solution = fit$par,
+                penalized_value  = fit$value,  
+                unpenalized_loss = val_unpenalized,
+                convergence      = fit$convergence
+              )
+            }
+            converged_indices <- which(sapply(results_list, function(x) x$convergence) == 0)
+            if (length(converged_indices) == 0) {
+              message("No model converged. Handle this case as you see fit...")
+              best_lambda <- NA
+              betaest     <- NA
+              success     <- 0
+            } else {
+              converged_models <- results_list[converged_indices]
+              lambdas_converged <- sapply(converged_models, function(x) x$lambda)
+              best_idx_local    <- which.min(lambdas_converged)
+              best_model  <- converged_models[[best_idx_local]]
+              best_lambda <- best_model$lambda
+              betahat[bt,]     <- as.vector(best_model$betavec_solution)
+            }
           }
         }
       }
@@ -295,103 +303,23 @@ PPIwcf <- function(source, target, sourcebb = NULL, targetbb = NULL, family = 'g
         mutpart <- sum((1 - phatall) * (yhatb - yhat) / (1 - pihat))
         tgpart <- sum(yhattg / (1 - pihat))
         meanhat <- 1 / (nrow(xtg) / (1 - pihat)) * (scpart + mutpart + tgpart) 
-        ## solve equation
-        if (family == 'gaussian'){
-          scpart <- t(what * (ysc - yhatbsc) / pihat) %*% cbind(rep(1, nrow(xsc)), xsc) 
-          mutpart <- t((1 - phatall) * (yhatb - yhat) / (1 - pihat)) %*% cbind(rep(1, nrow(xcomb)), as.matrix(xcomb))
-          tgpart <- t(yhattg / (1 - pihat)) %*% cbind(rep(1, nrow(xtg)), xtg)
-          leftpart <- t(cbind(rep(1, nrow(xtg)), xtg)) %*% cbind(rep(1, nrow(xtg)), xtg) / (1 - pihat)
-          betahat <- as.vector(solve(leftpart, diag(nrow(leftpart))) %*% t(scpart + mutpart + tgpart))
-          success <- 1
-        } else if (family == 'binomial'){
-          scpart <- t(what * (ysc - yhatbsc) / pihat) %*% cbind(rep(1, nrow(xsc)), xsc) 
-          mutpart <- t((1 - phatall) * (yhatb - yhat) / (1 - pihat)) %*% cbind(rep(1, nrow(xcomb)), as.matrix(xcomb)) 
-          avec <- scpart + mutpart
-          penalized_objective <- function(betavec, lambda) {
-            unpenalized_loss(avec, betavec, xtg, xsc, yhattg, pihat) + lambda * sum(betavec^2)
-          }
-          fit_for_lambda <- function(lambda, start_par = NULL) {
-            if (is.null(start_par)) {
-              start_par <- rep(0, ncol(xtg) + 1)
-            }
-            solution <- tryCatch(
-              expr = {
-                optim(
-                  par    = start_par,
-                  fn     = function(b) penalized_objective(b, lambda),
-                  method = "BFGS"
-                )
-              },
-              warning = function(w) {
-                message("Warning in optim: ", w$message)
-                list('par' = start_par, 'convergence' = 1)
-              },
-              error = function(e) {
-                message("Error in optim: ", e$message)
-                list('par' = start_par, 'convergence' = 1)
-              }
-            )
-            return(solution)
-          }
-          lambda_grid <- c(0, 1e-4, 1e-3, 1e-2, 1e-1, 1)
-          results_list <- vector("list", length(lambda_grid))
-          names(results_list) <- paste0("lambda=", lambda_grid)
-          for (i in seq_along(lambda_grid)) {
-            this_lambda <- lambda_grid[i]
-            fit <- fit_for_lambda(this_lambda)
-            val_unpenalized <- unpenalized_loss(avec, fit$par, xtg, xsc, yhattg, pihat)
-            results_list[[i]] <- list(
-              lambda           = this_lambda,
-              betavec_solution = fit$par,
-              penalized_value  = fit$value,  
-              unpenalized_loss = val_unpenalized,
-              convergence      = fit$convergence
-            )
-          }
-          converged_indices <- which(sapply(results_list, function(x) x$convergence) == 0)
-          if (length(converged_indices) == 0) {
-            message("No model converged. Handle this case as you see fit...")
-            best_lambda <- NA
-            betahat     <- NA
-            success     <- 0
-          } else {
-            converged_models <- results_list[converged_indices]
-            lambdas_converged <- sapply(converged_models, function(x) x$lambda)
-            best_idx_local    <- which.min(lambdas_converged)
-            best_model  <- converged_models[[best_idx_local]]
-            best_lambda <- best_model$lambda
-            betahat     <- as.vector(best_model$betavec_solution)
-            success     <- 1
-          }
+        if (onlymean == T){
+          betahat <- NULL 
         } else {
-          stop('Please provide a correct family!')
-        }
-      } else {
-        meanhat <- c()
-        betahat <- matrix(NA, nrow = 500, ncol = ncol(xtg) + 1)
-        for (bt in 1:500){
-          # generate ksi
-          ksivec <- rexp(n = nrow(xtg) + nrow(xsc), 1)
-          ksitg <- ksivec[1:nrow(xtg)]
-          ksisc <- ksivec[(nrow(xtg) + 1): (nrow(xtg) + nrow(xsc))]
-          ## solve mean equation
-          scpart <- sum(what * (ysc - yhatbsc) / pihat * ksisc)
-          mutpart <- sum((1 - phatall) * (yhatb - yhat) / (1 - pihat) * ksivec)
-          tgpart <- sum(yhattg / (1 - pihat) * ksitg)
-          meanhat[bt] <- 1 / ((sum(ksitg))/ (1 - pihat)) * (scpart + mutpart + tgpart) 
           ## solve equation
           if (family == 'gaussian'){
-            scpart <- t(what * (ysc - yhatbsc) / pihat * ksisc) %*% cbind(rep(1, nrow(xsc)), xsc) 
-            mutpart <- t((1 - phatall) * (yhatb - yhat) / (1 - pihat) * ksivec) %*% cbind(rep(1, nrow(xcomb)), as.matrix(xcomb))
-            tgpart <- t(yhattg / (1 - pihat) * ksitg) %*% cbind(rep(1, nrow(xtg)), xtg)
-            leftpart <- t(cbind(rep(1, nrow(xtg)), xtg)) %*% (cbind(rep(1, nrow(xtg)), xtg) * ksitg) / (1 - pihat)
-            betahat[bt,] <- as.vector(solve(leftpart, diag(nrow(leftpart))) %*% t(scpart + mutpart + tgpart))
+            scpart <- t(what * (ysc - yhatbsc) / pihat) %*% cbind(rep(1, nrow(xsc)), xsc) 
+            mutpart <- t((1 - phatall) * (yhatb - yhat) / (1 - pihat)) %*% cbind(rep(1, nrow(xcomb)), as.matrix(xcomb))
+            tgpart <- t(yhattg / (1 - pihat)) %*% cbind(rep(1, nrow(xtg)), xtg)
+            leftpart <- t(cbind(rep(1, nrow(xtg)), xtg)) %*% cbind(rep(1, nrow(xtg)), xtg) / (1 - pihat)
+            betahat <- as.vector(solve(leftpart, diag(nrow(leftpart))) %*% t(scpart + mutpart + tgpart))
+            success <- 1
           } else if (family == 'binomial'){
-            scpart <- t(what * (ysc - yhatbsc) / pihat * ksisc) %*% cbind(rep(1, nrow(xsc)), xsc) 
-            mutpart <- t((1 - phatall) * (yhatb - yhat) / (1 - pihat) * ksivec) %*% cbind(rep(1, nrow(xcomb)), as.matrix(xcomb)) 
+            scpart <- t(what * (ysc - yhatbsc) / pihat) %*% cbind(rep(1, nrow(xsc)), xsc) 
+            mutpart <- t((1 - phatall) * (yhatb - yhat) / (1 - pihat)) %*% cbind(rep(1, nrow(xcomb)), as.matrix(xcomb)) 
             avec <- scpart + mutpart
             penalized_objective <- function(betavec, lambda) {
-              unpenalized_loss_boot(avec, betavec, xtg, xsc, yhattg, pihat, ksitg) + lambda * sum(betavec^2)
+              unpenalized_loss(avec, betavec, xtg, xsc, yhattg, pihat) + lambda * sum(betavec^2)
             }
             fit_for_lambda <- function(lambda, start_par = NULL) {
               if (is.null(start_par)) {
@@ -422,7 +350,7 @@ PPIwcf <- function(source, target, sourcebb = NULL, targetbb = NULL, family = 'g
             for (i in seq_along(lambda_grid)) {
               this_lambda <- lambda_grid[i]
               fit <- fit_for_lambda(this_lambda)
-              val_unpenalized <- unpenalized_loss_boot(avec, fit$par, xtg, xsc, yhattg, pihat, ksitg)
+              val_unpenalized <- unpenalized_loss(avec, fit$par, xtg, xsc, yhattg, pihat)
               results_list[[i]] <- list(
                 lambda           = this_lambda,
                 betavec_solution = fit$par,
@@ -435,17 +363,105 @@ PPIwcf <- function(source, target, sourcebb = NULL, targetbb = NULL, family = 'g
             if (length(converged_indices) == 0) {
               message("No model converged. Handle this case as you see fit...")
               best_lambda <- NA
-              betaest     <- NA
+              betahat     <- NA
+              success     <- 0
             } else {
               converged_models <- results_list[converged_indices]
               lambdas_converged <- sapply(converged_models, function(x) x$lambda)
               best_idx_local    <- which.min(lambdas_converged)
               best_model  <- converged_models[[best_idx_local]]
               best_lambda <- best_model$lambda
-              betahat[bt,] <- as.vector(best_model$betavec_solution)
+              betahat     <- as.vector(best_model$betavec_solution)
+              success     <- 1
             }
           } else {
             stop('Please provide a correct family!')
+          }
+        }
+      } else {
+        meanhat <- c()
+        betahat <- matrix(NA, nrow = 500, ncol = ncol(xtg) + 1)
+        for (bt in 1:500){
+          # generate ksi
+          ksivec <- rexp(n = nrow(xtg) + nrow(xsc), 1)
+          ksitg <- ksivec[1:nrow(xtg)]
+          ksisc <- ksivec[(nrow(xtg) + 1): (nrow(xtg) + nrow(xsc))]
+          ## solve mean equation
+          scpart <- sum(what * (ysc - yhatbsc) / pihat * ksisc)
+          mutpart <- sum((1 - phatall) * (yhatb - yhat) / (1 - pihat) * ksivec)
+          tgpart <- sum(yhattg / (1 - pihat) * ksitg)
+          meanhat[bt] <- 1 / ((sum(ksitg))/ (1 - pihat)) * (scpart + mutpart + tgpart) 
+          if (onlymean == T){
+            next
+          } else {
+            ## solve equation
+            if (family == 'gaussian'){
+              scpart <- t(what * (ysc - yhatbsc) / pihat * ksisc) %*% cbind(rep(1, nrow(xsc)), xsc) 
+              mutpart <- t((1 - phatall) * (yhatb - yhat) / (1 - pihat) * ksivec) %*% cbind(rep(1, nrow(xcomb)), as.matrix(xcomb))
+              tgpart <- t(yhattg / (1 - pihat) * ksitg) %*% cbind(rep(1, nrow(xtg)), xtg)
+              leftpart <- t(cbind(rep(1, nrow(xtg)), xtg)) %*% (cbind(rep(1, nrow(xtg)), xtg) * ksitg) / (1 - pihat)
+              betahat[bt,] <- as.vector(solve(leftpart, diag(nrow(leftpart))) %*% t(scpart + mutpart + tgpart))
+            } else if (family == 'binomial'){
+              scpart <- t(what * (ysc - yhatbsc) / pihat * ksisc) %*% cbind(rep(1, nrow(xsc)), xsc) 
+              mutpart <- t((1 - phatall) * (yhatb - yhat) / (1 - pihat) * ksivec) %*% cbind(rep(1, nrow(xcomb)), as.matrix(xcomb)) 
+              avec <- scpart + mutpart
+              penalized_objective <- function(betavec, lambda) {
+                unpenalized_loss_boot(avec, betavec, xtg, xsc, yhattg, pihat, ksitg) + lambda * sum(betavec^2)
+              }
+              fit_for_lambda <- function(lambda, start_par = NULL) {
+                if (is.null(start_par)) {
+                  start_par <- rep(0, ncol(xtg) + 1)
+                }
+                solution <- tryCatch(
+                  expr = {
+                    optim(
+                      par    = start_par,
+                      fn     = function(b) penalized_objective(b, lambda),
+                      method = "BFGS"
+                    )
+                  },
+                  warning = function(w) {
+                    message("Warning in optim: ", w$message)
+                    list('par' = start_par, 'convergence' = 1)
+                  },
+                  error = function(e) {
+                    message("Error in optim: ", e$message)
+                    list('par' = start_par, 'convergence' = 1)
+                  }
+                )
+                return(solution)
+              }
+              lambda_grid <- c(0, 1e-4, 1e-3, 1e-2, 1e-1, 1)
+              results_list <- vector("list", length(lambda_grid))
+              names(results_list) <- paste0("lambda=", lambda_grid)
+              for (i in seq_along(lambda_grid)) {
+                this_lambda <- lambda_grid[i]
+                fit <- fit_for_lambda(this_lambda)
+                val_unpenalized <- unpenalized_loss_boot(avec, fit$par, xtg, xsc, yhattg, pihat, ksitg)
+                results_list[[i]] <- list(
+                  lambda           = this_lambda,
+                  betavec_solution = fit$par,
+                  penalized_value  = fit$value,  
+                  unpenalized_loss = val_unpenalized,
+                  convergence      = fit$convergence
+                )
+              }
+              converged_indices <- which(sapply(results_list, function(x) x$convergence) == 0)
+              if (length(converged_indices) == 0) {
+                message("No model converged. Handle this case as you see fit...")
+                best_lambda <- NA
+                betaest     <- NA
+              } else {
+                converged_models <- results_list[converged_indices]
+                lambdas_converged <- sapply(converged_models, function(x) x$lambda)
+                best_idx_local    <- which.min(lambdas_converged)
+                best_model  <- converged_models[[best_idx_local]]
+                best_lambda <- best_model$lambda
+                betahat[bt,] <- as.vector(best_model$betavec_solution)
+              }
+            } else {
+              stop('Please provide a correct family!')
+            }
           }
         }
         if (sum(is.na(betahat)) == 0){
@@ -860,5 +876,78 @@ PPI <- function(source, target, sourcebb = NULL, targetbb = NULL, family = 'gaus
       }
     }
     return(list('mean'= meanhat, 'beta' = betahat, 'success' = success))
+  }
+}
+
+
+
+
+PPIy <- function(y, ysbb = NULL, ytbb = NULL, family = 'binomial', bootstrap = FALSE, method = 'ACP',
+                 alpha = 0.05){
+  set.seed(2025)
+  ## estimations
+  ## estimate source
+  pihat <- length(ytbb)/(length(ytbb) + length(y))
+  Ehaty <- mean(y)
+  ## train E(y|yhat)
+  if (family == 'gaussian'){
+    data <- data.frame(y = y, ysbb)
+    lmodel <- lm(y ~ ., data = data)
+    col_names <- names(lmodel$coefficients)[-1]
+    yhat <- predict_probability(lmodel, rbind(as.matrix(ytbb), as.matrix(ysbb)), col_names)
+    yhattg <- yhat[1:length(ytbb)]
+    yhatsc <- yhat[(length(ytbb) + 1): (length(ytbb) + length(y))] 
+  } else if (family == 'binomial'){
+    data <- data.frame(y = y, ysbb)
+    glmodel <- glm(y ~ ., data = data, family = binomial(link = "logit"))
+    col_names <- names(glmodel$coefficients)[-1]
+    yhat <- predict_probability(glmodel, rbind(as.matrix(ytbb), as.matrix(ysbb)), col_names)
+    yhattg <- yhat[1:length(ytbb)]
+    yhatsc <- yhat[(length(ytbb) + 1): (length(ytbb) + length(y))]  
+  } else {
+    stop('Please provide a correct family!')
+  }
+  if (method == 'RePPI'){
+    scpart <- sum(y - yhatsc) / pihat
+    mupart <- sum(yhat)
+    meanhat <- sum(scpart + mupart) / (length(ytbb) + length(y))
+    if (bootstrap == T){
+      meanboot <- c()
+      for (bt in 1:500){
+        # generate ksi
+        ksivec <- rexp(n = (length(ytbb) + length(y)), 1)
+        ksitg <- ksivec[1:length(ytbb)]
+        ksisc <- ksivec[(length(ytbb) + 1): (length(ytbb) + length(y))]
+        ## solve mean equation
+        scpart <- sum((y - yhatsc) * ksisc) / pihat
+        mutpart <- sum(yhat * ksivec)
+        meanboot[bt] <- sum(scpart + mupart) / (length(ytbb) + length(y))
+      }
+      return(list('mean'= meanhat, 'lower' = quantile(meanboot, alpha / 2), 'upper' = quantile(meanboot, 1- alpha / 2)))
+    } else {
+      return(list('mean'= meanhat, 'lower' = NULL, 'upper' = NULL))
+    }
+  } else if (method == 'ACP'){
+    scpart <- sum(y - yhatsc) / pihat
+    tgpart <- Ehaty * length(ytbb) / (1 - pihat)
+    mupart <- sum(yhat) - Ehaty * (length(ytbb) + length(y))
+    meanhat <- sum(scpart + mupart + tgpart) / (length(ytbb) + length(y))
+    if (bootstrap == T){
+      meanboot <- c()
+      for (bt in 1:500){
+        # generate ksi
+        ksivec <- rexp(n = (length(ytbb) + length(y)), 1)
+        ksitg <- ksivec[1:length(ytbb)]
+        ksisc <- ksivec[(length(ytbb) + 1): (length(ytbb) + length(y))]
+        ## solve mean equation
+        scpart <- sum((y - yhatsc) * ksisc) / pihat
+        tgpart <- Ehaty * sum(ksitg) / (1 - pihat)
+        mupart <- sum(yhat * ksivec) - Ehaty * sum(ksivec)
+        meanboot[bt] <- sum(scpart + mupart + tgpart) / (length(ytbb) + length(y))
+      }
+      return(list('mean'= meanhat, 'lower' = quantile(meanboot, alpha / 2), 'upper' = quantile(meanboot, 1- alpha / 2)))
+    } else {
+      return(list('mean'= meanhat, 'lower' = NULL, 'upper' = NULL))
+    }
   }
 }

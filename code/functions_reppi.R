@@ -11,14 +11,56 @@ sample_split <- function(n) {
   return(list(index1 = index1, index2 = index2, index3 = index3))
 }
 
+sample_split_logistic <- function(n, Y) {
+  stopifnot(length(Y) == n)
+  
+  # Create two strata: Y == 1 and Y == 0
+  idx_pos <- which(Y == 1)
+  idx_neg <- which(Y == 0)
+  
+  # Shuffle each group separately
+  idx_pos <- sample(idx_pos)
+  idx_neg <- sample(idx_neg)
+  
+  # Helper to divide indices into three roughly equal parts
+  split_into_three <- function(indices) {
+    total <- length(indices)
+    third <- floor(total / 3)
+    extra <- total %% 3
+    sizes <- rep(third, 3)
+    if (extra > 0) sizes[1:extra] <- sizes[1:extra] + 1
+    split_indices <- split(indices, rep(1:3, times = sizes))
+    return(split_indices)
+  }
+  
+  # Split positive and negative separately
+  pos_split <- split_into_three(idx_pos)
+  neg_split <- split_into_three(idx_neg)
+  
+  # Combine each stratum
+  index1 <- c(pos_split[[1]], neg_split[[1]])
+  index2 <- c(pos_split[[2]], neg_split[[2]])
+  index3 <- c(pos_split[[3]], neg_split[[3]])
+  
+  # Shuffle each combined group
+  return(list(
+    index1 = sample(index1),
+    index2 = sample(index2),
+    index3 = sample(index3)
+  ))
+}
+
 grad_fit_ols <- function(X, Y, Yhat, theta, r, method = "linreg") {
   covariates <- cbind(X, Yhat)
   Y <- drop(Y)  # Ensure Y is a vector
   
+  # Model fitting
   if (method == "linreg") {
-    # Combine into data frame for lm
     df <- data.frame(Y = Y, covariates)
-    model <- lm(Y ~ ., data = df)
+    model <- lm(Y ~ . -1, data = df)
+  } else if (method == "logistic") {
+    df <- data.frame(Y = factor(Y), covariates)
+    model <- glm(Y ~ . -1, data = df, family = binomial())
   } else {
     stop(paste("Method", method, "not yet supported in R version."))
   }
@@ -26,10 +68,15 @@ grad_fit_ols <- function(X, Y, Yhat, theta, r, method = "linreg") {
   # Return a gradient-generating function
   f <- function(X_new, Yhat_new) {
     new_covariates <- data.frame(cbind(X_new, Yhat_new))
-    colnames(new_covariates) <- names(coef(model))[-1]
-    pred <- predict(model, newdata = new_covariates)
+    colnames(new_covariates) <- names(coef(model))
     
-    theta_no_intercept <- theta  # remove intercept
+    if (method == "logistic") {
+      pred <- predict(model, newdata = new_covariates, type = "response")  # probabilities
+    } else {
+      pred <- predict(model, newdata = new_covariates)
+    }
+    
+    theta_no_intercept <- theta  # keep consistent with Python version
     res <- X_new %*% matrix(theta_no_intercept, ncol = 1) - pred
     return((1 / (1 + r)) * sweep(X_new, 1, res, `*`))
   }
@@ -115,10 +162,18 @@ ppi_opt_ols_pointestimate_crossfit <- function(
   Yhat_unlabeled <- reshape_to_2d(Yhat_unlabeled)
   
   # Split indices
-  idx_split <- sample_split(n)
-  index1 <- idx_split$index1
-  index2 <- idx_split$index2
-  index3 <- idx_split$index3
+  if (method != 'logistic'){
+    idx_split <- sample_split(n)
+    index1 <- idx_split$index1
+    index2 <- idx_split$index2
+    index3 <- idx_split$index3
+  } else {
+    idx_split <- sample_split_logistic(n, Y)
+    index1 <- idx_split$index1
+    index2 <- idx_split$index2
+    index3 <- idx_split$index3
+  }
+  
   
   # WLS on each subset
   theta_1 <- wls(X[index1, ], Y[index1, ], w = w[index1])$theta

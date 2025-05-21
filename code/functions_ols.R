@@ -69,7 +69,24 @@ zconfint_generic <- function(est, se, alpha = 0.1, alternative = "two-sided") {
   return(list(lower = lower, upper = upper))
 }
 
+
 # Main function
+classical_mean_ci <- function(Y, w = NULL, alpha = 0.1, alternative = "two-sided") {
+  n <- length(Y)
+  
+  if (is.null(w)) {
+    mu <- mean(Y)
+    se <- sd(Y) / sqrt(n)
+  } else {
+    w <- w / sum(w) * n
+    mu <- sum(w * Y) / n
+    se <- sqrt(sum(w * (Y - mu)^2) / (n - 1)) / sqrt(n)
+  }
+  
+  zconfint_generic(mu, se, alpha, alternative)
+}
+
+
 classical_ols_ci <- function(X, Y, w = NULL, alpha = 0.1, alternative = "two-sided") {
   n <- length(Y)
   if (is.null(w)) {
@@ -79,4 +96,40 @@ classical_ols_ci <- function(X, Y, w = NULL, alpha = 0.1, alternative = "two-sid
     res <- wls(X, Y, w = w, return_se = TRUE)
   }
   return(zconfint_generic(res$theta, res$se, alpha, alternative))
+}
+
+
+classical_logistic_ci <- function(X, Y, alpha = 0.1, alternative = "two-sided") {
+  # Fit logistic regression
+  pointest <- logistic(X, Y)
+  
+  n <- nrow(X)
+  d <- ncol(X)
+  eta <- X %*% pointest
+  mu <- 1 / (1 + exp(-eta))  # expit
+  
+  # Compute V (Fisher Information)
+  V <- matrix(0, nrow = d, ncol = d)
+  grads <- matrix(0, nrow = n, ncol = d)
+  for (i in 1:n) {
+    xi <- matrix(X[i, ], nrow = 1)
+    V <- V + (mu[i] * (1 - mu[i])) * t(xi) %*% xi / n
+    grads[i, ] <- (mu[i] - Y[i]) * X[i, ]
+  }
+  
+  V_inv <- solve(V)
+  cov_mat <- V_inv %*% cov(grads) %*% V_inv
+  
+  se <- sqrt(diag(cov_mat) / n)
+  
+  # Compute confidence intervals
+  ci_bounds <- zconfint_generic(pointest, se, alpha, alternative)
+  return(ci_bounds)
+}
+
+# Logistic regression helper
+logistic <- function(X, Y) {
+  df <- data.frame(Y = as.factor(Y), X)
+  model <- glm(Y ~ . -1, data = df, family = binomial())  # -1 to exclude intercept
+  return(coef(model))
 }

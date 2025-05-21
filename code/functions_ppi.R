@@ -106,6 +106,85 @@ ppi_mean_pointestimate <- function(Y, Yhat, Yhat_unlabeled, lhat = NULL, coord =
   }
 }
 
+ppi_mean_ci <- function(Y,
+                        Yhat,
+                        Yhat_unlabeled,
+                        alpha = 0.1,
+                        alternative = "two-sided",
+                        lhat = NULL,
+                        coord = NULL,
+                        w = NULL,
+                        w_unlabeled = NULL,
+                        lambd_optim_mode = "overall") {
+  
+  n <- nrow(Y)
+  N <- nrow(Yhat_unlabeled)
+  d <- if (is.null(dim(Y))) 1 else ncol(Y)
+  
+  Y <- reshape_to_2d(Y)
+  Yhat <- reshape_to_2d(Yhat)
+  Yhat_unlabeled <- reshape_to_2d(Yhat_unlabeled)
+  
+  w <- construct_weight_vector(n, w)
+  w_unlabeled <- construct_weight_vector(N, w_unlabeled)
+  
+  if (is.null(lhat)) {
+    ppi_pointest <- ppi_mean_pointestimate(
+      Y = Y,
+      Yhat = Yhat,
+      Yhat_unlabeled = Yhat_unlabeled,
+      lhat = 1,
+      w = w,
+      w_unlabeled = w_unlabeled
+    )
+    
+    grads <- w * (Y - ppi_pointest)
+    grads_hat <- w * (Yhat - ppi_pointest)
+    grads_hat_unlabeled <- w_unlabeled * (Yhat_unlabeled - ppi_pointest)
+    
+    inv_hessian <- diag(d)
+    
+    lhat <- calc_lhat_glm(
+      grads = grads,
+      grads_hat = grads_hat,
+      grads_hat_unlabeled = grads_hat_unlabeled,
+      inv_hessian = inv_hessian,
+      coord = NULL,
+      clip = FALSE,
+      optim_mode = lambd_optim_mode
+    )
+    
+    return(ppi_mean_ci(
+      Y = Y,
+      Yhat = Yhat,
+      Yhat_unlabeled = Yhat_unlabeled,
+      alpha = alpha,
+      lhat = lhat,
+      coord = coord,
+      w = w,
+      w_unlabeled = w_unlabeled
+    ))
+  }
+  
+  ppi_pointest <- ppi_mean_pointestimate(
+    Y = Y,
+    Yhat = Yhat,
+    Yhat_unlabeled = Yhat_unlabeled,
+    lhat = lhat,
+    coord = coord,
+    w = w,
+    w_unlabeled = w_unlabeled
+  )
+  
+  imputed_std <- apply(w_unlabeled * (lhat * Yhat_unlabeled), 2, sd) / sqrt(N)
+  rectifier_std <- apply(w * (Y - lhat * Yhat), 2, sd) / sqrt(n)
+  
+  total_se <- sqrt(imputed_std^2 + rectifier_std^2)
+  
+  return(zconfint_generic(ppi_pointest, total_se, alpha, alternative))
+}
+
+
 ols_get_stats <- function(
     pointest,
     X,
@@ -336,3 +415,267 @@ ppi_ols_ci <- function(
   ))
 }
 
+
+######### Start for logistic 
+logistic_get_stats <- function(pointest, 
+                               X, Y, Yhat, 
+                               X_unlabeled, Yhat_unlabeled, 
+                               w = NULL, w_unlabeled = NULL, 
+                               use_unlabeled = TRUE) {
+  
+  n <- nrow(X)
+  d <- ncol(X)
+  N <- nrow(Yhat_unlabeled)
+  
+  # Normalize weights
+  if (is.null(w)) {
+    w <- rep(1, n)
+  } else {
+    w <- w / sum(w) * n
+  }
+  
+  if (is.null(w_unlabeled)) {
+    w_unlabeled <- rep(1, N)
+  } else {
+    w_unlabeled <- w_unlabeled / sum(w_unlabeled) * N
+  }
+  
+  # Predicted probabilities
+  mu <- plogis(X %*% pointest)                  # labeled
+  mu_til <- plogis(X_unlabeled %*% pointest)    # unlabeled
+  
+  hessian <- matrix(0, nrow = d, ncol = d)
+  grads_hat_unlabeled <- matrix(0, nrow = N, ncol = d)
+  
+  # Compute hessian and unlabeled gradients
+  if (use_unlabeled) {
+    for (i in 1:N) {
+      xi <- X_unlabeled[i, , drop = FALSE]
+      hessian <- hessian + 
+        (w_unlabeled[i] / (N + n)) * mu_til[i] * (1 - mu_til[i]) * t(xi) %*% xi
+      grads_hat_unlabeled[i, ] <- 
+        w_unlabeled[i] * X_unlabeled[i, ] * (mu_til[i] - Yhat_unlabeled[i])
+    }
+  }
+  
+  grads <- matrix(0, nrow = n, ncol = d)
+  grads_hat <- matrix(0, nrow = n, ncol = d)
+  
+  # Compute gradients and add to hessian
+  for (i in 1:n) {
+    xi <- X[i, , drop = FALSE]
+    weight <- if (use_unlabeled) w[i] / (N + n) else w[i] / n
+    hessian <- hessian + weight * mu[i] * (1 - mu[i]) * t(xi) %*% xi
+    
+    grads[i, ] <- w[i] * X[i, ] * (mu[i] - Y[i])
+    grads_hat[i, ] <- w[i] * X[i, ] * (mu[i] - Yhat[i])
+  }
+  
+  inv_hessian <- solve(hessian)
+  
+  return(list(
+    grads = grads,
+    grads_hat = grads_hat,
+    grads_hat_unlabeled = grads_hat_unlabeled,
+    inv_hessian = inv_hessian
+  ))
+}
+
+
+safe_log1pexp <- function(x) {
+  out <- numeric(length(x))
+  idxs <- x > 10
+  out[idxs] <- x[idxs]
+  out[!idxs] <- log1p(exp(x[!idxs]))
+  return(out)
+}
+
+
+ppi_logistic_pointestimate <- function(X, Y, Yhat, 
+                                       X_unlabeled, Yhat_unlabeled,
+                                       lhat = NULL, coord = NULL,
+                                       optimizer_options = list(), 
+                                       w = NULL, w_unlabeled = NULL) {
+  n <- nrow(X)
+  d <- ncol(X)
+  N <- nrow(X_unlabeled)
+  
+  # Normalize weights
+  if (is.null(w)) {
+    w <- rep(1, n)
+  } else {
+    w <- w / sum(w) * n
+  }
+  if (is.null(w_unlabeled)) {
+    w_unlabeled <- rep(1, N)
+  } else {
+    w_unlabeled <- w_unlabeled / sum(w_unlabeled) * N
+  }
+  
+  if (is.null(optimizer_options$ftol)) {
+    optimizer_options$ftol <- 1e-15
+  }
+  
+  # Initial theta: classical logistic regression
+  df <- data.frame(Y = as.factor(Y), X)
+  model <- glm(Y ~ . - 1, data = df, family = binomial())
+  theta <- coef(model)
+  if (is.null(dim(theta))) {
+    theta <- as.numeric(theta)
+  }
+  
+  lhat_curr <- if (is.null(lhat)) 1 else lhat
+  
+  # Loss function
+  rectified_logistic_loss <- function(theta_vec) {
+    theta_vec <- as.numeric(theta_vec)
+    term1 <- lhat_curr / N * sum(
+      w_unlabeled * (-Yhat_unlabeled * (X_unlabeled %*% theta_vec) + 
+                       safe_log1pexp(X_unlabeled %*% theta_vec))
+    )
+    term2 <- -lhat_curr / n * sum(
+      w * (-Yhat * (X %*% theta_vec) + 
+             safe_log1pexp(X %*% theta_vec))
+    )
+    term3 <- 1 / n * sum(
+      w * (-Y * (X %*% theta_vec) + 
+             safe_log1pexp(X %*% theta_vec))
+    )
+    return(term1 + term2 + term3)
+  }
+  
+  # Gradient function
+  rectified_logistic_grad <- function(theta_vec) {
+    theta_vec <- as.numeric(theta_vec)
+    grad1 <- (lhat_curr / N) * t(X_unlabeled) %*% 
+      (w_unlabeled * (plogis(X_unlabeled %*% theta_vec) - Yhat_unlabeled))
+    
+    grad2 <- (-lhat_curr / n) * t(X) %*% 
+      (w * (plogis(X %*% theta_vec) - Yhat))
+    
+    grad3 <- (1 / n) * t(X) %*% 
+      (w * (plogis(X %*% theta_vec) - Y))
+    
+    return(as.numeric(grad1 + grad2 + grad3))
+  }
+  
+  # Optimization
+  optim_result <- optim(par = theta,
+                        fn = rectified_logistic_loss,
+                        gr = rectified_logistic_grad,
+                        method = "L-BFGS-B",
+                        control = list(fnscale = 1, factr = optimizer_options$ftol))
+  
+  ppi_pointest <- optim_result$par
+  
+  # Re-estimate with optimal lhat if needed
+  if (is.null(lhat)) {
+    stats <- logistic_get_stats(ppi_pointest, X, Y, Yhat,
+                                X_unlabeled, Yhat_unlabeled,
+                                w = w, w_unlabeled = w_unlabeled)
+    
+    lhat <- calc_lhat_glm(stats$grads,
+                          stats$grads_hat,
+                          stats$grads_hat_unlabeled,
+                          stats$inv_hessian,
+                          coord = coord,
+                          clip = TRUE)
+    
+    return(ppi_logistic_pointestimate(
+      X, Y, Yhat, X_unlabeled, Yhat_unlabeled,
+      lhat = lhat, coord = coord,
+      optimizer_options = optimizer_options,
+      w = w, w_unlabeled = w_unlabeled
+    ))
+  } else {
+    return(ppi_pointest)
+  }
+}
+
+
+ppi_logistic_ci <- function(X, Y, Yhat,
+                            X_unlabeled, Yhat_unlabeled,
+                            alpha = 0.1,
+                            alternative = "two-sided",
+                            lhat = NULL,
+                            coord = NULL,
+                            optimizer_options = list(),
+                            w = NULL,
+                            w_unlabeled = NULL) {
+  n <- nrow(X)
+  d <- ncol(X)
+  N <- nrow(X_unlabeled)
+  
+  if (is.null(w)) {
+    w <- rep(1, n)
+  } else {
+    w <- w / sum(w) * n
+  }
+  if (is.null(w_unlabeled)) {
+    w_unlabeled <- rep(1, N)
+  } else {
+    w_unlabeled <- w_unlabeled / sum(w_unlabeled) * N
+  }
+  
+  use_unlabeled <- !identical(lhat, 0)
+  
+  # Compute point estimate
+  ppi_pointest <- ppi_logistic_pointestimate(
+    X, Y, Yhat,
+    X_unlabeled, Yhat_unlabeled,
+    optimizer_options = optimizer_options,
+    lhat = lhat,
+    coord = coord,
+    w = w,
+    w_unlabeled = w_unlabeled
+  )
+  
+  # Get gradients and Hessian
+  stats <- logistic_get_stats(
+    ppi_pointest,
+    X, Y, Yhat,
+    X_unlabeled, Yhat_unlabeled,
+    w = w,
+    w_unlabeled = w_unlabeled,
+    use_unlabeled = use_unlabeled
+  )
+  
+  grads <- stats$grads
+  grads_hat <- stats$grads_hat
+  grads_hat_unlabeled <- stats$grads_hat_unlabeled
+  inv_hessian <- stats$inv_hessian
+  
+  # Estimate lhat if needed
+  if (is.null(lhat)) {
+    lhat <- calc_lhat_glm(
+      grads,
+      grads_hat,
+      grads_hat_unlabeled,
+      inv_hessian,
+      coord = coord,
+      clip = TRUE
+    )
+    
+    return(ppi_logistic_ci(
+      X, Y, Yhat,
+      X_unlabeled, Yhat_unlabeled,
+      alpha = alpha,
+      alternative = alternative,
+      lhat = lhat,
+      coord = coord,
+      optimizer_options = optimizer_options,
+      w = w,
+      w_unlabeled = w_unlabeled
+    ))
+  }
+  
+  # Variance computation
+  var_unlabeled <- cov(lhat * grads_hat_unlabeled)
+  var <- cov(grads - lhat * grads_hat)
+  
+  Sigma_hat <- inv_hessian %*% ((n / N) * var_unlabeled + var) %*% inv_hessian
+  se <- sqrt(diag(Sigma_hat) / n)
+  
+  # Confidence intervals
+  return(zconfint_generic(ppi_pointest, se, alpha = alpha, alternative = alternative))
+}
