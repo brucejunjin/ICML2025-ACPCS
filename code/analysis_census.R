@@ -7,19 +7,19 @@ library(stats)
 library(Matrix)
 
 # load proposed
-source('functions_ols.R')
-source('functions_ppi.R')
-source('functions_reppi.R')
+source('./helper/functions_ols.R')
+source('./helper/functions_ppi.R')
+source('./helper/functions_reppi.R')
 library(SuperLearner)
 library(ranger)
 library(kernlab)
 library(xgboost)
-source('functions.R')
-source('superlearner.R')
+source('./helper/functions.R')
+source('./helper/superlearner.R')
 
 
 # Read and shuffle data
-data <- read.csv("./data/Census.csv")
+data <- read.csv("../data/Census.csv")
 data$SEX <- ifelse(data$SEX == 1, 0, 1)
 
 X <- as.matrix(cbind(1, data[,1:2]))
@@ -104,7 +104,7 @@ for (target_index in 1:3){
   rowMeans(bias_record)
   apply(X=bias_record, MARGIN=1, FUN=sd)
   
-  save(length_record, file = paste0('./output/realdata/Census/CIlength', target_index, '.rda'))
-  save(bias_record, file = paste0('./output/realdata/Census/Biaslength', target_index, '.rda'))
+  save(length_record, file = paste0('../output/realdata/Census/CIlength', target_index, '.rda'))
+  save(bias_record, file = paste0('../output/realdata/Census/Biaslength', target_index, '.rda'))
 }
 

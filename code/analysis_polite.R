@@ -7,19 +7,19 @@ library(MASS)
 library(progress)
 
 # load proposed
-source('functions_ols.R')
-source('functions_ppi.R')
-source('functions_reppi.R')
+source('./helper/functions_ols.R')
+source('./helper/functions_ppi.R')
+source('./helper/functions_reppi.R')
 library(SuperLearner)
 library(ranger)
 library(kernlab)
 library(xgboost)
-source('functions.R')
-source('superlearner.R')
+source('./helper/functions.R')
+source('./helper/superlearner.R')
 
 
 # Load dataset and shuffle
-data <- fread("./data/Polite_data.csv") %>% na.omit() %>% sample_frac(1)
+data <- fread("../data/Polite_data.csv") %>% na.omit() %>% sample_frac(1)
 Yhat <- data$gpt_score
 device <- "hedge"  # "hedge" or "1pp"
 Y <- data[["Normalized Score"]]
@@ -113,8 +113,8 @@ for (target_index in 1:2){
   rowMeans(bias_record)
   apply(X=bias_record, MARGIN=1, FUN=sd)
   
-  save(length_record, file = paste0('./output/realdata/Polite/CIlength', target_index, '.rda'))
-  save(bias_record, file = paste0('./output/realdata/Polite/Biaslength', target_index, '.rda'))
+  save(length_record, file = paste0('../output/realdata/Polite/CIlength', target_index, '.rda'))
+  save(bias_record, file = paste0('../output/realdata/Polite/Biaslength', target_index, '.rda'))
 }
 
 

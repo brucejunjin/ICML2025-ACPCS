@@ -3,9 +3,9 @@ target_index <- 1 # for Wine: 1 to 6; for Polite: 1 to 2; for Census: 1 to 3
 tabnam <- 'length' # available for 'length' and 'bias'
 
 if (tabnam == 'length'){
-  filename <- paste0('./output/realdata/Wine/CIlength', target_index, '.rda')
+  filename <- paste0('../output/realdata/Wine/CIlength', target_index, '.rda')
 } else {
-  filename <- paste0('./output/realdata/Wine/Biaslength', target_index, '.rda')
+  filename <- paste0('../output/realdata/Wine/Biaslength', target_index, '.rda')
 }
 
 load(filename)

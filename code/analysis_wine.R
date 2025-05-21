@@ -6,18 +6,18 @@ library(stats)
 library(Matrix)
 
 # load proposed
-source('functions_ols.R')
-source('functions_ppi.R')
-source('functions_reppi.R')
+source('./helper/functions_ols.R')
+source('./helper/functions_ppi.R')
+source('./helper/functions_reppi.R')
 library(SuperLearner)
 library(ranger)
 library(kernlab)
 library(xgboost)
-source('functions.R')
-source('superlearner.R')
+source('./helper/functions.R')
+source('./helper/superlearner.R')
 
 # Read and shuffle data
-data <- read_csv("./data/US_wine.csv") %>% sample_frac(1)
+data <- read_csv("../data/US_wine.csv") %>% sample_frac(1)
 
 # Extract prediction and ground truth
 Yhat <- pmax(data$gpt_point, 80)
@@ -121,7 +121,7 @@ for (target_index in 1:6){
   rowMeans(bias_record)
   apply(X=bias_record, MARGIN=1, FUN=sd)
   
-  save(length_record, file = paste0('./output/realdata/Wine/CIlength', target_index, '.rda'))
-  save(bias_record, file = paste0('./output/realdata/Wine/Biaslength', target_index, '.rda'))
+  save(length_record, file = paste0('../output/realdata/Wine/CIlength', target_index, '.rda'))
+  save(bias_record, file = paste0('../output/realdata/Wine/Biaslength', target_index, '.rda'))
 }
 

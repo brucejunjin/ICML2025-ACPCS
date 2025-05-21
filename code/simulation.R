@@ -3,11 +3,11 @@ library(MASS)
 library(SuperLearner)
 library(caret)
 library(parallel)
-source('functions.R')
-source('superlearner.R')
-source('functions_ols.R')
-source('functions_ppi.R')
-source('functions_reppi.R')
+source('./helper/functions.R')
+source('./helper/superlearner.R')
+source('./helper/functions_ols.R')
+source('./helper/functions_ppi.R')
+source('./helper/functions_reppi.R')
 
 # Define the parameters in the study
 seed <- 2025
@@ -236,37 +236,37 @@ for (family in c('gaussian', 'binomial')){
             famname <- 'Binomial'
           }
           # about mean
-          save(ytrue.mean, file = paste0("./output/true/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_ytrue.rda'))
-          save(wbb.mean, file = paste0("./output/wbb/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_mean.rda'))
-          save(bb.mean, file = paste0("./output/bb/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_mean.rda'))
-          save(ytg.mean, file = paste0("./output/true/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_ytg.rda'))
+          save(ytrue.mean, file = paste0("../output/true/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_ytrue.rda'))
+          save(wbb.mean, file = paste0("../output/wbb/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_mean.rda'))
+          save(bb.mean, file = paste0("../output/bb/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_mean.rda'))
+          save(ytg.mean, file = paste0("../output/true/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_ytg.rda'))
           # add 4 compares
-          save(xy.mean, file = paste0("./output/xyonly/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_mean.rda'))
-          save(ppi.mean, file = paste0("./output/ppi/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_mean.rda'))
-          save(ppipp.mean, file = paste0("./output/ppipp/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_mean.rda'))
-          save(reppi.mean, file = paste0("./output/reppi/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_mean.rda'))
+          save(xy.mean, file = paste0("../output/xyonly/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_mean.rda'))
+          save(ppi.mean, file = paste0("../output/ppi/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_mean.rda'))
+          save(ppipp.mean, file = paste0("../output/ppipp/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_mean.rda'))
+          save(reppi.mean, file = paste0("../output/reppi/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_mean.rda'))
           
           # about beta
-          save(wbb.list, file = paste0("./output/wbb/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_beta.rda'))
-          save(bb.list, file = paste0("./output/bb/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_beta.rda'))
-          save(betatrue.list, file = paste0("./output/true/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_betatrue.rda'))
-          save(betatg.list, file = paste0("./output/true/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_betatg.rda'))
+          save(wbb.list, file = paste0("../output/wbb/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_beta.rda'))
+          save(bb.list, file = paste0("../output/bb/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_beta.rda'))
+          save(betatrue.list, file = paste0("../output/true/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_betatrue.rda'))
+          save(betatg.list, file = paste0("../output/true/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_betatg.rda'))
           # add 4 compares
-          save(xy.list, file = paste0("./output/xyonly/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_beta.rda'))
-          save(ppi.list, file = paste0("./output/ppi/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_beta.rda'))
-          save(ppipp.list, file = paste0("./output/ppipp/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_beta.rda'))
-          save(reppi.list, file = paste0("./output/reppi/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_beta.rda'))
+          save(xy.list, file = paste0("../output/xyonly/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_beta.rda'))
+          save(ppi.list, file = paste0("../output/ppi/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_beta.rda'))
+          save(ppipp.list, file = paste0("../output/ppipp/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_beta.rda'))
+          save(reppi.list, file = paste0("../output/reppi/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_beta.rda'))
           
           # abount y
-          save(ytg.list, file = paste0("./output/true/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_ytruelist.rda'))
-          save(ywbb.list, file = paste0("./output/wbb/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
-          save(ybb.list, file = paste0("./output/bb/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
-          save(ytgest.list, file = paste0("./output/true/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
+          save(ytg.list, file = paste0("../output/true/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_ytruelist.rda'))
+          save(ywbb.list, file = paste0("../output/wbb/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
+          save(ybb.list, file = paste0("../output/bb/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
+          save(ytgest.list, file = paste0("../output/true/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
           # add 4 compares
-          save(yxy.list, file = paste0("./output/xyonly/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
-          save(yppi.list, file = paste0("./output/ppi/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
-          save(yppipp.list, file = paste0("./output/ppipp/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
-          save(yreppi.list, file = paste0("./output/reppi/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
+          save(yxy.list, file = paste0("../output/xyonly/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
+          save(yppi.list, file = paste0("../output/ppi/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
+          save(yppipp.list, file = paste0("../output/ppipp/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
+          save(yreppi.list, file = paste0("../output/reppi/", famname, '_alpha', alpha*10, '_rho', rho*10, '_ns', nsource, '_nt', ntarget, '_predict.rda'))
         }
       }
     }
